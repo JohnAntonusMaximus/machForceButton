@@ -1,145 +1,132 @@
 #include <ESP8266WiFi.h>
-#include "FS.h"
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <DNSServer.h>  
+#include <WiFiManager.h>  
+#include "FS.h"
 
 /////////////////////////
 ///Hardware Definitions//
 /////////////////////////
 
+#define debounce 50 // ms debounce period to prevent flickering when pressing or releasing the button
+#define holdTime 7000 // ms hold period: how long to wait for press+hold event
+
 const int button = 12;
 const int ledRed = 13;
 const int ledGreen = 14;
-const int ledYellow = 15;
 const int ledWhite = 11;
 
-/////////////////////////
-///Stage 1 Definitions///
-/////////////////////////
+// Button Actions
 
-char* ssid;
-char* password;
+int buttonVal     = 0;      // value read from button
+int buttonLast    = 0;      // buffered value of the button's previous state
+long btnDnTime;             // time the button was pressed down
+long btnUpTime;             // time the button was released
+boolean ignoreUp  = false;  // whether to ignore the button release because the click+hold was triggered
 
-const char WiFiAPPSK[] = "MachForce";
-WiFiServer server(80);
-bool result = false;
-bool start;
+WiFiManager wifiManager;
+int TRIGGER_PIN = 15;
 
-String accessPointSetup = "";
-
-/////////////////////////
-///Stage 2 Definitions///
-/////////////////////////
 
 String customerDetailPage = "";
 String resultPage = "";
   
-/////////////////////////
-///Stage 3 Definitions///
-/////////////////////////
-
-/////////////////////////
-///Stage 4 Definitions///
-/////////////////////////
 
 void setup() {
-
-    ///// Populate HTML For Client ///////
   
-  
-    ///// Initiate Hardware ///////
+    Serial.begin(115200);
 
-    initiateHardware(); 
+    ///// Initiate WiFi ///////
+    
+    wifiManager.setAPCallback(configModeCallback);
+    wifiManager.setMinimumSignalQuality(10);
+    wifiManager.setConfigPortalTimeout(60);
+    wifiManager.autoConnect("MachForce", "1234567");
+    // ^BLOCKS UNTIL TRUE^ //
+    //if you get here you have connected to the WiFi
+    Serial.println("Successfully Connected!");
+
+     ///// Initiate Hardware ///////
+    //initiateHardware();
 
     ///// STAGE 1 - SPIFF Format & Access Point ///////
+    SPIFFS.begin();
+    Serial.println("SPIFFS File Formatting, please wait...");
+    SPIFFS.format();
+    // Check SPIFFS File for customer data
+    File f = SPIFFS.open("/f.txt", "w");
+    if (!f) {
+        Serial.println("File Open Failed");
+    }
+    Serial.print("File Size: ");
+    Serial.println(f.size());
+    if( f.size() == 0){
+        Serial.println("====== Writing To SPIFFS file =======");
+        f.print("Scabby Boogey Boo!");
+        f.close();
+    } else {
+        Serial.println("====== FILE IS NOT EMPTY =======");
+    }
+    File F = SPIFFS.open("/f.txt", "r");
+    if (!F) {
+        Serial.println("File Open Failed");
+    } else { 
+        Serial.println("====== Reading from SPIFFS file =======");
+        String s = F.readStringUntil('\n');
+        Serial.println(s);
+    }
     
-    StageOne();
-    
-    ///// Stage 2 Setup ///////
-    
-    ///// Stage 3 Setup ///////
-    
-    ///// Stage 4 Setup ///////
-
 }
 
 void loop() {
     
-    ///// Stage 1 - Access Point Setup ///////
-    if(!ssid && !password){
-      WiFiClient client = server.available();
-      if(!client){
-        return;
+      // Read the state of the button
+      buttonVal = digitalRead(TRIGGER_PIN);
+      
+      // Test for button pressed and store the down time
+      if (buttonVal == HIGH && buttonLast == LOW && (millis() - btnUpTime) > long(debounce)){
+        btnDnTime = millis();
       }
-      // Send Access Point Setup Page
-      client.print(accessPointSetup);
-    }
-
-  
-
+      
+      // Test for button release and store the up time
+      if (buttonVal == LOW && buttonLast == HIGH && (millis() - btnDnTime) > long(debounce)){
+        if (ignoreUp == false){
+            shortPress();
+        } else { 
+            ignoreUp = false;
+        }
+        btnUpTime = millis();
+      }
+      
+      // Test for button held down for longer than the hold time
+      if (buttonVal == HIGH && (millis() - btnDnTime) > long(holdTime)){
+        longHold();
+        ignoreUp = true;
+        btnDnTime = millis();
+      }
+      
+      buttonLast = buttonVal;
 }
 
+
 void StageOne(){
-    SPIFFS.begin();
-    
-    //Serial.println("Please wait 30 secs for SPIFFS to be formatted");
-    //digitalWrite(ledWhite,HIGH);
-    //result = SPIFFS.format();
-    //if(result == true){
-      //digitalWrite(ledWhite, LOW);
-     // digitalWrite(ledGreen, HIGH);
-     // delay(200);
-     // digitalWrite(ledGreen, HIGH);
-     // delay(200);
-     // digitalWrite(ledGreen, HIGH);
-    //}
-  
-    accessPointSetup += "<html>"; 
-    accessPointSetup += "<head>";
-    accessPointSetup += "<!-- Latest compiled and minified CSS -->";
-    accessPointSetup += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\" integrity=\"sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u\" crossorigin=\"anonymous\">";
-    accessPointSetup += "<!-- Optional theme -->";
-    accessPointSetup += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css\" integrity=\"sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp\" crossorigin=\"anonymous\">";
-    accessPointSetup += "<!-- Latest compiled and minified JavaScript -->";
-    accessPointSetup += "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\" integrity=\"sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa\" crossorigin=\"anonymous\"></script>";
-    accessPointSetup += "</head>";
-    accessPointSetup += "<body>";
-    accessPointSetup += "<div class=\"container\" id=\"container\" style=\"margin-left: 30px; line-height: 10px; position: relative; \">";
-    accessPointSetup += "<div class=\"row\">";
-    accessPointSetup += "<div class=\"cols-xs-12 col-md-9 pull-md-3 bd-content\" style=\"padding-bottom: 15px;\">";
-    accessPointSetup += "<h1 style=\"font-family:\'Oswald\', sans-serif; padding-bottom 20px;\">Welcome To MachForce <span style=\"font-weight: bold; color: dodgerblue;\">Access Point</span> Setup</h1>";
-    accessPointSetup += "</div>";
-    accessPointSetup += "<br/><br/>";
-    accessPointSetup += "<div class=\"cols-xs-12 col-md-9 pull-md-3 bd-content\">";
-    accessPointSetup += "<p>Please enter access point SSID and password.</p>";
-    accessPointSetup += "</div>";
-    accessPointSetup += "<br/><br/>";
-    accessPointSetup += "<div class=\"panel panel-default\" style=\"width: 80%; margin-top: 5%;\">";
-    accessPointSetup += "<div class=\"panel-body\">";
-    accessPointSetup += "<form method=\"post\" action=\"accessPointCredentials\">"; 
-    accessPointSetup += "<div class=\"form-group row\">";
-    accessPointSetup += "<label for=\"SSID\" class=\"col-xs-4 col-form-label\" style=\"line-height: 15px; width: 22%; padding-top: 10px;\">SSID </label>";
-    accessPointSetup += "<div class=\"col-xs-4\">";
-    accessPointSetup += "<input class=\"form-control\" type=\"text\" id=\"ssid\" name=\"ssid\">";
-    accessPointSetup += "</div>";
-    accessPointSetup += "</div>";
-    accessPointSetup += "<div class=\"form-group row\">";
-    accessPointSetup += "<label for=\"password\" class=\"col-xs-4 col-form-label\" style=\"line-height: 15px; width: 22%; padding-top: 10px;\">Password </label>";
-    accessPointSetup += "<div class=\"col-xs-4\">";
-    accessPointSetup += "<input class=\"form-control\" type=\"password\" id=\"password\" name=\"password\">";
-    accessPointSetup += "</div>";
-    accessPointSetup += "</div>";
-    accessPointSetup += "<button type=\"submit\" class=\"btn btn-primary\">Submit</button>";
-    accessPointSetup += "</form>";
-    accessPointSetup += "</div>"; // <--- panel-body
-    accessPointSetup += "</div>"; // <--- panel panel-default
-    accessPointSetup += "</div>"; // <--- row
-    accessPointSetup += "</div>"; // <--- container
-    accessPointSetup += "</body>"; // <--- body
-    accessPointSetup += "</html>"; // <--- html
+//    SPIFFS.begin();
+//    
+//    Serial.println("Please wait 30 secs for SPIFFS to be formatted");
+//    digitalWrite(ledWhite,HIGH);
+//    result = SPIFFS.format();
+//    if(result == true){
+//      digitalWrite(ledWhite, LOW);
+//      digitalWrite(ledGreen, HIGH);
+//      delay(200);
+//      digitalWrite(ledGreen, HIGH);
+//      delay(200);
+//      digitalWrite(ledGreen, HIGH);
+//    }
       
-    server.begin();
+//    server.begin();
 }
 
 void StageTwo(){
@@ -250,32 +237,31 @@ void StageTwo(){
 }
 
 void initiateHardware(){
+    Serial.print("Hardware Inititiating..............");
+    digitalWrite(TRIGGER_PIN, LOW);
     pinMode(button, INPUT);
     pinMode(ledRed, OUTPUT);
     pinMode(ledGreen, OUTPUT);
-    pinMode(ledYellow, OUTPUT);
     pinMode(ledWhite, OUTPUT);
-    setupWiFiAccessPoint();
+    pinMode(TRIGGER_PIN, INPUT);
+    Serial.println("Hardware Inititiated!");
 }
 
-void setupWiFiAccessPoint(){
-  WiFi.mode(WIFI_AP);
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("Entered config mode");
+  Serial.println(WiFi.softAPIP());
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
 
-  // Do a little work to get a unique-ish name. Append the
-  // last two bytes of the MAC (HEX'd) to "Thing-":
-  uint8_t mac[WL_MAC_ADDR_LENGTH];
-  WiFi.softAPmacAddress(mac);
-  String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
-                 String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
-  macID.toUpperCase();
-  String AP_NameString = "MachForce Device " + macID;
+void shortPress(){
+   // Wake Button up and send customer data to MachForce API for service request
+   Serial.println("Sending Message to MachForce for customer Service");
+}
 
-  char AP_NameChar[AP_NameString.length() + 1];
-  memset(AP_NameChar, 0, AP_NameString.length() + 1);
-
-  for (int i=0; i<AP_NameString.length(); i++)
-    AP_NameChar[i] = AP_NameString.charAt(i);
-
-  WiFi.softAP(AP_NameChar, WiFiAPPSK);
+void longHold(){
+  // RESETS MACHFORCE DEVICE -> Clears WiFi settings and empties SPIFF file, starts from begginning into STAGE 1
+   // Empty SPIFF Files here
+   wifiManager.resetSettings();
+   ESP.restart();
 }
 
