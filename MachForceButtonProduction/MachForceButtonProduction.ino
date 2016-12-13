@@ -27,107 +27,66 @@ long btnUpTime;             // time the button was released
 boolean ignoreUp  = false;  // whether to ignore the button release because the click+hold was triggered
 
 WiFiManager wifiManager;
+MDNSResponder mdns;
+ESP8266WebServer server(80);
 int TRIGGER_PIN = 15;
 
+boolean customerDetailsFlag;
+String  customerDetails;
 
 String customerDetailPage = "";
 String resultPage = "";
   
 
-void setup() {
+void setup(void) {
   
     Serial.begin(115200);
 
     ///// Initiate WiFi ///////
-    
     wifiManager.setAPCallback(configModeCallback);
     wifiManager.setMinimumSignalQuality(10);
     wifiManager.setConfigPortalTimeout(60);
     wifiManager.autoConnect("MachForce", "1234567");
-    // ^BLOCKS UNTIL TRUE^ //
+    // ^BLOCKS UNTIL TRUE --- Will automatically go into WiFi Manager if false //
+    checkResetButton();
+    
     //if you get here you have connected to the WiFi
     Serial.println("Successfully Connected!");
 
      ///// Initiate Hardware ///////
-    //initiateHardware();
+    initiateHardware();
 
     ///// STAGE 1 - SPIFF Format & Access Point ///////
     SPIFFS.begin();
-    Serial.println("SPIFFS File Formatting, please wait...");
-    SPIFFS.format();
+   
     // Check SPIFFS File for customer data
-    File f = SPIFFS.open("/f.txt", "w");
+    File f = SPIFFS.open("/f.txt", "r");
     if (!f) {
         Serial.println("File Open Failed");
     }
     Serial.print("File Size: ");
     Serial.println(f.size());
     if( f.size() == 0){
-        Serial.println("====== Writing To SPIFFS file =======");
-        f.print("Scabby Boogey Boo!");
-        f.close();
+        customerDetailsFlag = false;
+        // Enter web server mode     
+        StageTwo();
     } else {
-        Serial.println("====== FILE IS NOT EMPTY =======");
+      customerDetails = f.readStringUntil('\n');
+      Serial.println("Customer Details Exist, Recorded As:");
+      Serial.println(customerDetails);
+      f.close();
     }
-    File F = SPIFFS.open("/f.txt", "r");
-    if (!F) {
-        Serial.println("File Open Failed");
-    } else { 
-        Serial.println("====== Reading from SPIFFS file =======");
-        String s = F.readStringUntil('\n');
-        Serial.println(s);
-    }
+    
+    
     
 }
 
 void loop() {
-    
-      // Read the state of the button
-      buttonVal = digitalRead(TRIGGER_PIN);
-      
-      // Test for button pressed and store the down time
-      if (buttonVal == HIGH && buttonLast == LOW && (millis() - btnUpTime) > long(debounce)){
-        btnDnTime = millis();
-      }
-      
-      // Test for button release and store the up time
-      if (buttonVal == LOW && buttonLast == HIGH && (millis() - btnDnTime) > long(debounce)){
-        if (ignoreUp == false){
-            shortPress();
-        } else { 
-            ignoreUp = false;
-        }
-        btnUpTime = millis();
-      }
-      
-      // Test for button held down for longer than the hold time
-      if (buttonVal == HIGH && (millis() - btnDnTime) > long(holdTime)){
-        longHold();
-        ignoreUp = true;
-        btnDnTime = millis();
-      }
-      
-      buttonLast = buttonVal;
+      Serial.println("Going into sleep mode now...");
+      ESP.deepSleep(0, WAKE_RF_DEFAULT); // if using relay as a switching device, change this to yield(); 
+      delay(100);
 }
 
-
-void StageOne(){
-//    SPIFFS.begin();
-//    
-//    Serial.println("Please wait 30 secs for SPIFFS to be formatted");
-//    digitalWrite(ledWhite,HIGH);
-//    result = SPIFFS.format();
-//    if(result == true){
-//      digitalWrite(ledWhite, LOW);
-//      digitalWrite(ledGreen, HIGH);
-//      delay(200);
-//      digitalWrite(ledGreen, HIGH);
-//      delay(200);
-//      digitalWrite(ledGreen, HIGH);
-//    }
-      
-//    server.begin();
-}
 
 void StageTwo(){
     
@@ -233,16 +192,46 @@ void StageTwo(){
     resultPage += "</div>";  // <--- ?????
     resultPage += "</div>";  // <--- container
     resultPage += "</body>"; // <--- body
-    resultPage += "</html>"; // <--- html  
+    resultPage += "</html>"; // <--- html 
+
+    if(mdns.begin("esp8266", WiFi.localIP())){
+       Serial.println("MDNS responder started");
+    }
+    
+    server.on("/", [](){
+      server.send(200,"text/html", customerDetailPage);
+    });
+    
+    server.on("/customerDetails", handle_form);
+    
+    server.on("/setupResult", [](){
+      server.send(200,"text/html", resultPage);
+    }); 
+    
+    server.begin();
+    
+    Serial.println("HTTP server started");
+    Serial.println("Customer configuration server started. Please navigate open a browser and navigate to: ");
+    Serial.println(WiFi.localIP());
+
+    while(customerDetailsFlag == false){
+      server.handleClient();
+    }
+}
+
+void checkResetButton(){
+          // Read the state of the button
+        buttonVal = digitalRead(TRIGGER_PIN); 
+        
+        // Test for button held down for longer than the hold time
+        if (buttonVal == HIGH){
+          factoryReset();
+        }
 }
 
 void initiateHardware(){
     Serial.print("Hardware Inititiating..............");
     digitalWrite(TRIGGER_PIN, LOW);
-    pinMode(button, INPUT);
-    pinMode(ledRed, OUTPUT);
-    pinMode(ledGreen, OUTPUT);
-    pinMode(ledWhite, OUTPUT);
     pinMode(TRIGGER_PIN, INPUT);
     Serial.println("Hardware Inititiated!");
 }
@@ -254,14 +243,84 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 void shortPress(){
-   // Wake Button up and send customer data to MachForce API for service request
-   Serial.println("Sending Message to MachForce for customer Service");
+    Serial.println("Service Requested! Sending...");
+    Serial.println(customerDetails);
+//  int len = customerDetails.length();
+//  String lenString = String(len);
+//  HTTPClient http;
+//
+//  http.begin(host);
+//  http.addHeader("POST", "/post HTTP/1.1");
+//  http.addHeader("Host", "machforce-api.herokuapp.com");
+//  http.addHeader("Content-Type", "application/json");
+//  http.addHeader("Content-Length",lenString);
+//  http.addHeader("Cache-Control","no-cache");
+//  http.POST(customerDetails);
+//  http.writeToStream(&Serial);
+//  http.end();
+//
+//  Serial.println("CHECK: OK-3");
+
 }
 
-void longHold(){
+void factoryReset(){
   // RESETS MACHFORCE DEVICE -> Clears WiFi settings and empties SPIFF file, starts from begginning into STAGE 1
    // Empty SPIFF Files here
-   wifiManager.resetSettings();
-   ESP.restart();
+  Serial.print("Restoring to factory settings, please wait...");
+  SPIFFS.format();
+  wifiManager.resetSettings();
+  Serial.println("Done! Restarting now.");
+  ESP.restart();
 }
+
+void handle_form() {                                       
+  String customerName       = server.arg("customerName");
+  String cAccount           = server.arg("cAccount");
+  String callbackNumber     = server.arg("callbackNumber");
+  String vAccount           = server.arg("vAccount");
+  String groupId            = server.arg("groupId");
+  String productForService  = server.arg("productForService");
+  String modelNumber        = server.arg("modelNumber");
+  String deviceId           = String(ESP.getChipId());
+
+  customerDetails += "{\"smsMessage\":\"/ ALERT: Service Requested / ";
+  customerDetails += "Customer Name: "        + customerName        + " / ";
+  customerDetails += "Account #: "            + cAccount            + " / ";
+  customerDetails += "Callback #: "           + callbackNumber      + " / ";
+  customerDetails += "Product: "              + productForService   + "\",";
+  customerDetails += "\"vAccount\": \""       + vAccount            + "\",";
+  customerDetails += "\"groupId\": \""        + groupId             + "\",";
+  customerDetails += "\"cAccount\": \""       + cAccount            + "\",";
+  customerDetails += "\"cName\": \""          + customerName        + "\",";
+  customerDetails += "\"deviceId\": \""       + deviceId            + "\",";
+  customerDetails += "\"callback\": \""       + callbackNumber      + "\",";
+  customerDetails += "\"ForService\": \""     + productForService   + "\",";
+  customerDetails += "\"modelNumber\": \""    + modelNumber         + "\"}";
+  
+  
+  Serial.println(customerName);
+  Serial.println(cAccount);
+  Serial.println(callbackNumber);
+  Serial.println(vAccount);
+  Serial.println(groupId);
+  Serial.println(productForService);
+  Serial.println(modelNumber);
+
+  // Send HTTP Request to MachForce API to validate deviceId and valid inputs
+                          
+  // If deviceId checks out and valid input
+  File F = SPIFFS.open("/f.txt", "w");
+  if(!F){
+    Serial.println("File not found! Cannot record customer details.");
+  }
+  Serial.println("====== Writing to SPIFFS file =========");
+  F.print(customerDetails);
+  Serial.println(customerDetails);
+  F.close();
+  
+  server.send(200, "text/html", resultPage);
+
+  customerDetailsFlag = true;
+
+  }
 
