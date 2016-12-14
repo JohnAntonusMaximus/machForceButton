@@ -5,18 +5,26 @@
 #include <DNSServer.h>  
 #include <WiFiManager.h>  
 #include "FS.h"
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
+
+/////////////////////////
+///?Firmware Version/////
+/////////////////////////
+
+const String version = "1.0";
 
 /////////////////////////
 ///Hardware Definitions//
 /////////////////////////
 
-#define debounce 50 // ms debounce period to prevent flickering when pressing or releasing the button
-#define holdTime 7000 // ms hold period: how long to wait for press+hold event
+#define USE_SERIAL Serial
 
 const int button = 12;
 const int ledRed = 13;
 const int ledGreen = 14;
 const int ledWhite = 11;
+
 
 // Button Actions
 
@@ -39,8 +47,13 @@ String resultPage = "";
   
 
 void setup(void) {
-  
+   
     Serial.begin(115200);
+    Serial.print("Welcome To MachForce! Version Number: ");
+    Serial.println(version);
+    
+    ///// Initiate Hardware ///////
+    initiateHardware();
 
     ///// Initiate WiFi ///////
     wifiManager.setAPCallback(configModeCallback);
@@ -52,9 +65,6 @@ void setup(void) {
     
     //if you get here you have connected to the WiFi
     Serial.println("Successfully Connected!");
-
-     ///// Initiate Hardware ///////
-    initiateHardware();
 
     ///// STAGE 1 - SPIFF Format & Access Point ///////
     SPIFFS.begin();
@@ -76,8 +86,8 @@ void setup(void) {
       Serial.println(customerDetails);
       f.close();
     }
-    
-    
+
+    runUpdater();
     
 }
 
@@ -323,4 +333,24 @@ void handle_form() {
   customerDetailsFlag = true;
 
   }
+
+  void runUpdater(){
+      Serial.println("Running updater...");
+      t_httpUpdate_return ret = ESPhttpUpdate.update("http://machforce-api-multi.herokuapp.com/update/" + version);
+        //t_httpUpdate_return  ret = ESPhttpUpdate.update("https://server/file.bin");
+
+        switch(ret) {
+            case HTTP_UPDATE_FAILED:
+                USE_SERIAL.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+                break;
+
+            case HTTP_UPDATE_NO_UPDATES:
+                USE_SERIAL.println("HTTP_UPDATE_NO_UPDATES");
+                break;
+
+            case HTTP_UPDATE_OK:
+                USE_SERIAL.println("HTTP_UPDATE_OK");
+                break;
+        }
+}
 
