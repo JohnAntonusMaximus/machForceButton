@@ -9,7 +9,7 @@
 #include <ESP8266httpUpdate.h>
 
 /////////////////////////
-///?Firmware Version/////
+///Firmware Version/////
 /////////////////////////
 
 const String version = "1.0";
