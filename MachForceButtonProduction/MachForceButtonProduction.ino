@@ -7,6 +7,10 @@
 #include "FS.h"
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
+#include "sha256.h"
+#include "Base64.h"
+#include "base64mod.h"
+
 
 /////////////////////////
 ///Firmware Version/////
@@ -92,8 +96,8 @@ void setup(void) {
 }
 
 void loop() {
-      Serial.println("Going into sleep mode now...");
-      ESP.deepSleep(0, WAKE_RF_DEFAULT); // if using relay as a switching device, change this to yield(); 
+      Serial.println("Yielding...");
+      yield(); // if using relay as a switching device, change this to yield(); 
       delay(100);
 }
 
@@ -291,7 +295,9 @@ void handle_form() {
   String groupId            = server.arg("groupId");
   String productForService  = server.arg("productForService");
   String modelNumber        = server.arg("modelNumber");
-  String deviceId           = String(ESP.getChipId());
+  String token              = generateToken();
+  String auth               = encodeDeviceId();
+  
 
   customerDetails += "{\"smsMessage\":\"/ ALERT: Service Requested / ";
   customerDetails += "Customer Name: "        + customerName        + " / ";
@@ -302,7 +308,7 @@ void handle_form() {
   customerDetails += "\"groupId\": \""        + groupId             + "\",";
   customerDetails += "\"cAccount\": \""       + cAccount            + "\",";
   customerDetails += "\"cName\": \""          + customerName        + "\",";
-  customerDetails += "\"deviceId\": \""       + deviceId            + "\",";
+  customerDetails += "\"deviceId\": \""       + auth                + "\",";
   customerDetails += "\"callback\": \""       + callbackNumber      + "\",";
   customerDetails += "\"ForService\": \""     + productForService   + "\",";
   customerDetails += "\"modelNumber\": \""    + modelNumber         + "\"}";
@@ -352,5 +358,27 @@ void handle_form() {
                 USE_SERIAL.println("HTTP_UPDATE_OK");
                 break;
         }
+}
+
+String generateToken(){
+  String deviceId = String(ESP.getChipId());
+  uint8_t* hash;
+  Sha256.initHmac((const uint8_t*)"helloDolly", 10);
+  Sha256.print(deviceId);
+  hash = Sha256.resultHmac();
+  int hashSize = 32;
+  int encodedSizeHash = base64_enc_len(hashSize);
+  char encodedHash[encodedSizeHash];
+  char* hashPointer = (char*) hash;
+  base64_encode(encodedHash, hashPointer, hashSize);
+  String token = encodedHash;
+  Serial.println("TOKEN = " + token);
+  return token;
+}
+
+String encodeDeviceId(){
+  String deviceId = String(ESP.getChipId());
+  String encodedId = base64mod::encode(deviceId);
+  return String(encodedId);
 }
 
