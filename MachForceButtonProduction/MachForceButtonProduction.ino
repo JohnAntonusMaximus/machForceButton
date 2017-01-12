@@ -10,10 +10,11 @@
 #include "sha256.h"
 #include "Base64.h"
 #include "base64mod.h"
+#include "AES.h"
 
 
 /////////////////////////
-///Firmware Version/////
+///Firmware Version//////
 /////////////////////////
 
 const String version = "1.0";
@@ -28,31 +29,44 @@ const int button = 12;
 const int ledRed = 13;
 const int ledGreen = 14;
 const int ledWhite = 11;
+int TRIGGER_PIN = 15;
 
-
-// Button Actions
-
-int buttonVal     = 0;      // value read from button
-int buttonLast    = 0;      // buffered value of the button's previous state
-long btnDnTime;             // time the button was pressed down
-long btnUpTime;             // time the button was released
-boolean ignoreUp  = false;  // whether to ignore the button release because the click+hold was triggered
+//////////////////////////////
+///WiFi & Server Definitions//
+//////////////////////////////
 
 WiFiManager wifiManager;
 MDNSResponder mdns;
 ESP8266WebServer server(80);
-int TRIGGER_PIN = 15;
 
+/////////////////////////////////
+///AES128 Encryption Defintions//
+/////////////////////////////////
+
+AES aes;
+byte key[] = { 0x1B, 0x7F, 0x20, 0x12, 0xAE, 0x11, 0x1E, 0x88, 0xA6, 0xF9, 0x16, 0x66, 0x4F, 0xF8, 0x3C, 0x4F };
+byte my_iv[N_BLOCK] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+
+//////////////////////////////////////
+///HTML Content & Customer Data Vars//
+//////////////////////////////////////
 boolean customerDetailsFlag;
 String  customerDetails;
+String  payload;
+String  customerDetailPage = "";
+String  resultPage = "";
+String  authErrorPage = "";
+String  errorPage = "";
+String  serverErrorPage = "";
 
-String customerDetailPage = "";
-String resultPage = "";
+const char* host = "http://machforce-api-multi.herokuapp.com";
+
   
 
 void setup(void) {
    
     Serial.begin(115200);
+    Serial.println();
     Serial.print("Welcome To MachForce! Version Number: ");
     Serial.println(version);
     
@@ -65,12 +79,18 @@ void setup(void) {
     wifiManager.setConfigPortalTimeout(60);
     wifiManager.autoConnect("MachForce", "1234567");
     // ^BLOCKS UNTIL TRUE --- Will automatically go into WiFi Manager if false //
+
+    // Check For Factory Reset Button
     checkResetButton();
     
-    //if you get here you have connected to the WiFi
+    //Connected to the WiFi
     Serial.println("Successfully Connected!");
 
-    ///// STAGE 1 - SPIFF Format & Access Point ///////
+    ///// Run OTA Firmware Updater ///////
+    //runUpdater();
+
+
+///// STAGE 1 - SPIFF Format & Access Point ///////
     SPIFFS.begin();
    
     // Check SPIFFS File for customer data
@@ -85,23 +105,19 @@ void setup(void) {
         // Enter web server mode     
         StageTwo();
     } else {
-      customerDetails = f.readStringUntil('\n');
+      payload = f.readStringUntil('\n');
       Serial.println("Customer Details Exist, Recorded As:");
-      Serial.println(customerDetails);
+      Serial.println(payload);
       f.close();
+      shortPress();
     }
-
-    runUpdater();
     
 }
 
 void loop() {
-      Serial.println("Yielding...");
-      yield(); // if using relay as a switching device, change this to yield(); 
-      delay(100);
 }
 
-
+///// STAGE 2 - Configure Customer Details  ///////
 void StageTwo(){
     
     ///// Populate HTML For Client ///////
@@ -208,6 +224,87 @@ void StageTwo(){
     resultPage += "</body>"; // <--- body
     resultPage += "</html>"; // <--- html 
 
+    authErrorPage += "<html>";
+    authErrorPage += "<head>"; // <--- head
+    authErrorPage += "<!-- Latest compiled and minified CSS -->";
+    authErrorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\" integrity=\"sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u\" crossorigin=\"anonymous\">";
+    authErrorPage += "<!-- Optional theme -->";
+    authErrorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css\" integrity=\"sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp\" crossorigin=\"anonymous\">";
+    authErrorPage += "<!-- Latest compiled and minified JavaScript -->";
+    authErrorPage += "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\" integrity=\"sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa\" crossorigin=\"anonymous\"></script>";
+    authErrorPage += "</head>"; // <--- head
+    authErrorPage += "<body>"; 
+    authErrorPage += "<div class=\"container\">";
+    authErrorPage += "<div class=\"\" style=\"padding-top: 50px;\">"; // <--- ??????
+    authErrorPage += "<div class=\"row\">";
+    authErrorPage += "<h1 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">Whoops! Something Went Wrong!</h1>";
+    authErrorPage += "<br/>";
+    authErrorPage += "<h2 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">We couldn't <span style=\"font-weight: bold; color: dodgerblue;\">Authenticate</span> The Information You Provided. <BR>Please double-check all form fields and try again. All fields are case-sensitive</h2>";
+    authErrorPage += "</div>";
+    authErrorPage += "<div style=\"text-align: center;\">";
+    authErrorPage += "<br/>";
+    authErrorPage += "<br/>";
+    authErrorPage += "<img src=\"http://res.cloudinary.com/ha3eifngn/image/upload/v1480980127/MachForce_Logo_fvngw9.png\" height=\"75px\">";
+    authErrorPage += "</div>"; 
+    authErrorPage += "</div>";  // <--- ?????
+    authErrorPage += "</div>";  // <--- container
+    authErrorPage += "</body>"; // <--- body
+    authErrorPage += "</html>"; // <--- html 
+
+    errorPage += "<html>";
+    errorPage += "<head>"; // <--- head
+    errorPage += "<!-- Latest compiled and minified CSS -->";
+    errorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\" integrity=\"sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u\" crossorigin=\"anonymous\">";
+    errorPage += "<!-- Optional theme -->";
+    errorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css\" integrity=\"sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp\" crossorigin=\"anonymous\">";
+    errorPage += "<!-- Latest compiled and minified JavaScript -->";
+    errorPage += "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\" integrity=\"sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa\" crossorigin=\"anonymous\"></script>";
+    errorPage += "</head>"; // <--- head
+    errorPage += "<body>"; 
+    errorPage += "<div class=\"container\">";
+    errorPage += "<div class=\"\" style=\"padding-top: 50px;\">"; // <--- ??????
+    errorPage += "<div class=\"row\">";
+    errorPage += "<h1 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">Whoops! Something Went Wrong!</h1>";
+    errorPage += "<br/>";
+    errorPage += "<h2 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">Nothing Was Sent. Please reset the device to factory settings and try again.</h2>";
+    errorPage += "</div>";
+    errorPage += "<div style=\"text-align: center;\">";
+    errorPage += "<br/>";
+    errorPage += "<br/>";
+    errorPage += "<img src=\"http://res.cloudinary.com/ha3eifngn/image/upload/v1480980127/MachForce_Logo_fvngw9.png\" height=\"75px\">";
+    errorPage += "</div>"; 
+    errorPage += "</div>";  // <--- ?????
+    errorPage += "</div>";  // <--- container
+    errorPage += "</body>"; // <--- body
+    errorPage += "</html>"; // <--- html
+
+    serverErrorPage += "<html>";
+    serverErrorPage += "<head>"; // <--- head
+    serverErrorPage += "<!-- Latest compiled and minified CSS -->";
+    serverErrorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\" integrity=\"sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u\" crossorigin=\"anonymous\">";
+    serverErrorPage += "<!-- Optional theme -->";
+    serverErrorPage += "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css\" integrity=\"sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp\" crossorigin=\"anonymous\">";
+    serverErrorPage += "<!-- Latest compiled and minified JavaScript -->";
+    serverErrorPage += "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\" integrity=\"sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa\" crossorigin=\"anonymous\"></script>";
+    serverErrorPage += "</head>"; // <--- head
+    serverErrorPage += "<body>"; 
+    serverErrorPage += "<div class=\"container\">";
+    serverErrorPage += "<div class=\"\" style=\"padding-top: 50px;\">"; // <--- ??????
+    serverErrorPage += "<div class=\"row\">";
+    serverErrorPage += "<h1 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">Whoops! Something Went Wrong!</h1>";
+    serverErrorPage += "<br/>";
+    serverErrorPage += "<h2 style=\"font-family:\'Oswald\', sans-serif; text-align: center;\">There was an error on the server. Please contact MachForce and report the problem.</h2>";
+    serverErrorPage += "</div>";
+    serverErrorPage += "<div style=\"text-align: center;\">";
+    serverErrorPage += "<br/>";
+    serverErrorPage += "<br/>";
+    serverErrorPage += "<img src=\"http://res.cloudinary.com/ha3eifngn/image/upload/v1480980127/MachForce_Logo_fvngw9.png\" height=\"75px\">";
+    serverErrorPage += "</div>"; 
+    serverErrorPage += "</div>";  // <--- ?????
+    serverErrorPage += "</div>";  // <--- container
+    serverErrorPage += "</body>"; // <--- body
+    serverErrorPage += "</html>"; // <--- html
+
     if(mdns.begin("esp8266", WiFi.localIP())){
        Serial.println("MDNS responder started");
     }
@@ -235,7 +332,7 @@ void StageTwo(){
 
 void checkResetButton(){
           // Read the state of the button
-        buttonVal = digitalRead(TRIGGER_PIN); 
+        int buttonVal = digitalRead(TRIGGER_PIN); 
         
         // Test for button held down for longer than the hold time
         if (buttonVal == HIGH){
@@ -251,30 +348,25 @@ void initiateHardware(){
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
+  wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
   Serial.println("Entered config mode");
   Serial.println(WiFi.softAPIP());
   Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
 void shortPress(){
-    Serial.println("Service Requested! Sending...");
-    Serial.println(customerDetails);
-//  int len = customerDetails.length();
-//  String lenString = String(len);
-//  HTTPClient http;
-//
-//  http.begin(host);
-//  http.addHeader("POST", "/post HTTP/1.1");
-//  http.addHeader("Host", "machforce-api.herokuapp.com");
-//  http.addHeader("Content-Type", "application/json");
-//  http.addHeader("Content-Length",lenString);
-//  http.addHeader("Cache-Control","no-cache");
-//  http.POST(customerDetails);
-//  http.writeToStream(&Serial);
-//  http.end();
-//
-//  Serial.println("CHECK: OK-3");
+  Serial.println("Service Requested! Sending...");
+  Serial.println(payload);
+  int len = payload.length();
+  String lenString = String(len);
+  HTTPClient http;
+  char* path = "/test";
 
+  http.begin("http://api.machforce.io/test");
+  http.addHeader("Content-Type", "application/json");
+  http.POST(payload);
+  http.writeToStream(&Serial);
+  http.end();
 }
 
 void factoryReset(){
@@ -287,58 +379,82 @@ void factoryReset(){
   ESP.restart();
 }
 
-void handle_form() {                                       
+void handle_form() { 
+  customerDetails = "";
+  payload         = "";                                      
   String customerName       = server.arg("customerName");
   String cAccount           = server.arg("cAccount");
   String callbackNumber     = server.arg("callbackNumber");
   String vAccount           = server.arg("vAccount");
   String groupId            = server.arg("groupId");
-  String productForService  = server.arg("productForService");
+  String ForService         = server.arg("productForService");
   String modelNumber        = server.arg("modelNumber");
-  String token              = generateToken();
-  String auth               = encodeDeviceId();
-  
+  String token              = String(ESP.getChipId());
 
-  customerDetails += "{\"smsMessage\":\"/ ALERT: Service Requested / ";
-  customerDetails += "Customer Name: "        + customerName        + " / ";
-  customerDetails += "Account #: "            + cAccount            + " / ";
-  customerDetails += "Callback #: "           + callbackNumber      + " / ";
-  customerDetails += "Product: "              + productForService   + "\",";
-  customerDetails += "\"vAccount\": \""       + vAccount            + "\",";
-  customerDetails += "\"groupId\": \""        + groupId             + "\",";
-  customerDetails += "\"cAccount\": \""       + cAccount            + "\",";
-  customerDetails += "\"cName\": \""          + customerName        + "\",";
-  customerDetails += "\"deviceId\": \""       + auth                + "\",";
-  customerDetails += "\"callback\": \""       + callbackNumber      + "\",";
-  customerDetails += "\"ForService\": \""     + productForService   + "\",";
-  customerDetails += "\"modelNumber\": \""    + modelNumber         + "\"}";
-  
-  
-  Serial.println(customerName);
-  Serial.println(cAccount);
-  Serial.println(callbackNumber);
-  Serial.println(vAccount);
-  Serial.println(groupId);
-  Serial.println(productForService);
-  Serial.println(modelNumber);
+  customerDetails += "{\"vAccount\": \""      + vAccount                      + "\",";
+  customerDetails += "\"groupId\": \""        + groupId                       + "\",";
+  customerDetails += "\"cAccount\": \""       + cAccount                      + "\",";
+  customerDetails += "\"cName\": \""          + customerName                  + "\",";
+  customerDetails += "\"callbackNumber\": \"+"+ callbackNumber                + "\",";
+  customerDetails += "\"ForService\": \""     + ForService                    + "\",";
+  customerDetails += "\"token\": \""          + token                         + "\",";
+  customerDetails += "\"modelNumber\": \""    + modelNumber                   + "\"";
+  customerDetails += "}";
 
+  payload = AESencrypt(customerDetails);
+  
   // Send HTTP Request to MachForce API to validate deviceId and valid inputs
-                          
-  // If deviceId checks out and valid input
-  File F = SPIFFS.open("/f.txt", "w");
-  if(!F){
-    Serial.println("File not found! Cannot record customer details.");
-  }
-  Serial.println("====== Writing to SPIFFS file =========");
-  F.print(customerDetails);
-  Serial.println(customerDetails);
-  F.close();
+  Serial.println("Authenticating Customer Details. Please Wait...");
+  //Serial.println("Payload: " + payload);
+
+  // Initiate TLS 1.2 Connection
+  HTTPClient http;
+  http.begin("http://machforce-api-multi.herokuapp.com/test");
+  http.addHeader("Content-Type", "application/json");
+  int httpCode = http.POST(payload);
   
-  server.send(200, "text/html", resultPage);
+  if(httpCode > 0) {
+            // HTTP header has been send and Server response header has been handled
+            USE_SERIAL.printf("[HTTP]POST... code: %d\n", httpCode);
 
-  customerDetailsFlag = true;
-
+            // Response from server
+            if(httpCode == 200) {
+                String response = http.getString();
+                USE_SERIAL.println(response);
+                http.end();
+                USE_SERIAL.printf("Connection closed!");            
+                // Write customer data to SPIFFS file
+                File F = SPIFFS.open("/f.txt", "w");
+                if(!F){
+                  Serial.println("File not found! Cannot record customer details.");
+                }
+                Serial.println("====== Writing to SPIFFS file =========");
+                F.print(payload);
+                USE_SERIAL.printf("Customer Details Set To: ");
+                Serial.println(payload);
+                F.close();
+                server.send(200, "text/html", resultPage);
+                customerDetailsFlag = true;
+            } else if (httpCode == 400){
+                String response = http.getString();
+                USE_SERIAL.println(response);
+                http.end();
+                USE_SERIAL.printf("Connection closed!");
+                server.send(400, "text/html", authErrorPage);
+            }
+              else {
+                String payload = http.getString();
+                USE_SERIAL.println(payload);
+                http.end();
+                USE_SERIAL.printf("Connection closed!");
+                server.send(500, "text/html", serverErrorPage);
+              }
+        } else {
+            USE_SERIAL.printf("CONNECTION ERROR: Nothing was sent.");
+        }
   }
+
+  
 
   void runUpdater(){
       Serial.println("Running updater...");
@@ -372,7 +488,6 @@ String generateToken(){
   char* hashPointer = (char*) hash;
   base64_encode(encodedHash, hashPointer, hashSize);
   String token = encodedHash;
-  Serial.println("TOKEN = " + token);
   return token;
 }
 
@@ -380,5 +495,63 @@ String encodeDeviceId(){
   String deviceId = String(ESP.getChipId());
   String encodedId = base64mod::encode(deviceId);
   return String(encodedId);
+}
+
+String encodeData(String data){
+  String encodedData = base64mod::encode(data);
+  return String(encodedData);
+}
+
+String AESencrypt(String customerDetails){
+    int stringLength  = customerDetails.length(); // Maximum Length for encoding 281 chars
+    int b64Length     = stringLength * 8;
+    int cipherLength  = b64Length * 3;
+    char b64data[500];
+    byte cipher[1000];
+    byte iv[N_BLOCK];
+
+    aes.set_key(key, sizeof(key));
+    gen_iv(my_iv);
+
+    // DEBUG ONLY - Print the IV
+    Serial.println("Encryption activating...");
+    Serial.println("Data Length: " + stringLength);
+    
+    base64_encode(b64data, (char *)my_iv,N_BLOCK);
+    String IV = String(b64data);
+    Serial.println("IV in Base 64: " + IV);
+    Serial.println("Message To Encode: " + customerDetails);
+
+    int b64len = base64_encode(b64data, (char *)customerDetails.c_str(),customerDetails.length());
+    Serial.println("B64 Size: " + String(b64len));
+    // Encryption Done Here
+    aes.do_aes_encrypt((byte *)b64data, b64len, cipher, key, 128, my_iv);
+    base64_encode(b64data, (char *)cipher, aes.get_size());
+    String encryptedCustomerData = String(b64data);
+
+    // DEBUG ONLY - Print the IV
+    Serial.println("Encryption Done!");
+    Serial.println("Cipher Size: " + String(aes.get_size()));
+    Serial.println("Encrypted Data: " + encryptedCustomerData);
+
+    String payload = "{ \"payload\": \"";
+    payload += encryptedCustomerData + "\",";
+    payload += "\"vector\": \" ";
+    payload += IV + "\" }";
+
+    aes.clean();
+
+    return payload;
+}
+
+void gen_iv(byte *iv){
+  for(int i=0; i < N_BLOCK; i++){
+    iv[i]= (byte) getRnd();
+  }
+}
+
+uint8_t getRnd(){
+   uint8_t randomNumber = *(volatile uint8_t *) 0x3FF20E44;
+   return randomNumber;
 }
 
