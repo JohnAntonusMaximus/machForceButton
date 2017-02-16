@@ -26,7 +26,7 @@ int counter;
 int ledRed = 14;
 int ledGreen = 13;
 int ledBlue = 12;
-int ledWhite = 10;
+int ledWhite = 4;
 int TRIGGER_PIN = 15;
 int ledState = LOW;
 unsigned long previousMillis = 0;
@@ -106,7 +106,7 @@ void setup(void) {
       digitalWrite(relayPin, LOW);
     }
     // ^BLOCKS UNTIL TRUE --- Will automatically go into WiFi Manager if false //
-
+    ESP.wdtFeed();
     // Check For Factory Reset Button
     checkResetButton();
     
@@ -135,6 +135,7 @@ void setup(void) {
       Serial.println("Customer Details Exist, Recorded As:");
       Serial.println(payload);
       f.close();
+      digitalWrite(ledWhite, LOW);
       shortPress();
     }
     
@@ -441,6 +442,106 @@ void flashLight(int ledColor){
   delay(100);
 }
 
+
+void transmitFlashLight(int ledColor){
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+  digitalWrite(ledColor, HIGH);
+  delay(50);
+  digitalWrite(ledColor, LOW);
+  delay(50);
+}
+
 void configModeCallback (WiFiManager *myWiFiManager) {
   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
   Serial.println("Entered config mode");
@@ -449,36 +550,20 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 void shortPress(){
-  digitalWrite(ledWhite, HIGH);
-  delay(500);
-  digitalWrite(ledWhite, LOW);
-  delay(500);
-
-  digitalWrite(ledWhite, HIGH);
-  delay(500);
-  digitalWrite(ledWhite, LOW);
-  delay(500);
-
-  digitalWrite(ledWhite, HIGH);
-  delay(500);
-  digitalWrite(ledWhite, LOW);
-  delay(500);
-
-  digitalWrite(ledWhite, HIGH);
-  delay(500);
-  digitalWrite(ledWhite, LOW);
-  delay(500);
-  
+  ESP.wdtFeed();
+  transmitFlashLight(ledWhite);
   Serial.println("Service Requested! Sending...");
   Serial.println(payload);
   int len = payload.length();
   String lenString = String(len);
   HTTPClient http;
   char* path = "/post";
-
+  ESP.wdtFeed();
   http.begin("http://api.machforce.io/wrong");
   http.addHeader("Content-Type", "application/json");
+  
   int httpCode = http.POST(payload);
+  ESP.wdtFeed();
   if(httpCode == 200) {
     http.writeToStream(&Serial);
     http.end();
@@ -504,7 +589,9 @@ void factoryReset(){
   digitalWrite(ledRed, HIGH);
   digitalWrite(ledWhite,HIGH);
   Serial.print("Restoring to factory settings, please wait...");
+  ESP.wdtFeed();
   SPIFFS.format();
+  ESP.wdtFeed();
   wifiManager.resetSettings();
   Serial.println("Done! Restarting now.");
   digitalWrite(ledRed, LOW);
@@ -514,6 +601,7 @@ void factoryReset(){
 }
 
 void handle_form() { 
+  ESP.wdtFeed();
   customerDetails = "";
   payload         = "";                                      
   String customerName       = server.arg("customerName");
@@ -597,7 +685,7 @@ void handle_form() {
   
 
   void runUpdater(){
-      ESP.wdtDisable();
+      ESP.wdtFeed();
       //String hostHTTPS = "https://api.machforce.io/update/" + version;
       String hostUnsecured = "http://api.machforce.io/update/" + version;
       Serial.println("Running updater...");
