@@ -5,6 +5,7 @@
 #include "FS.h"
 #include <Arduino.h>
 #include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ESP8266httpUpdate.h>
 #include "Base64.h"
 #include "AES.h"
@@ -21,13 +22,19 @@ const String version = "1.0";
 /////////////////////////
 
 #define USE_SERIAL Serial
-int relayPin = 5;
+
+int relayPin = 5;     // MOSFET PIN
+int TRIGGER_PIN = 15; // Factory Reset Pin
+int ledRed = 14;      // LED RED
+int ledGreen = 13;    // LED GREEN
+int ledBlue = 12;     // LED BLUE
+int ledWhite = 4;     // LED WHITE
+
+//////////////////////////////////
+///Timer & Led State Definitions//
+//////////////////////////////////
+
 int counter;
-int ledRed = 14;
-int ledGreen = 13;
-int ledBlue = 12;
-int ledWhite = 4;
-int TRIGGER_PIN = 15;
 int ledState = LOW;
 unsigned long previousMillis = 0;
 const long interval = 1000;
@@ -43,6 +50,7 @@ ESP8266WebServer server(80);
 //////////////////////////////////////
 //////////Customer Data Vars//////////
 //////////////////////////////////////
+
 boolean customerDetailsFlag;
 String  customerDetails;
 String  payload;
@@ -68,7 +76,10 @@ byte my_iv[N_BLOCK] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 /////////////////////////////////////////
 /////////////MachForce API///////////////
 /////////////////////////////////////////
+
 const char* host = "http://machforce-api-multi.herokuapp.com";
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup(void) {
     pinMode(relayPin, OUTPUT);
@@ -106,7 +117,9 @@ void setup(void) {
       digitalWrite(relayPin, LOW);
     }
     // ^BLOCKS UNTIL TRUE --- Will automatically go into WiFi Manager if false //
-    ESP.wdtFeed();
+    
+    ESP.wdtFeed();        // Need the dog or will reset after OTA updates...woof woof.
+    
     // Check For Factory Reset Button
     checkResetButton();
     
@@ -361,10 +374,12 @@ void StageTwo(){
     Serial.println("Customer configuration server started. Please navigate open a browser and navigate to: ");
     Serial.print(localServer);
     Serial.println(".local");
+
+    
     digitalWrite(ledWhite, LOW);
     counter = 0;
     int relayInterval = 45;
-    while(customerDetailsFlag == false && counter < relayInterval){ // the counter is what will determine when the relay shuts off
+    while(customerDetailsFlag == false && counter < relayInterval){     // the counter is what will determine when the relay shuts off
       checkMillis(ledBlue);
       server.handleClient();
     }
@@ -412,7 +427,7 @@ void checkMillis(int ledColor){
     
     // set the LED with the ledState of the variable:
     digitalWrite(ledColor, ledState);
-    ESP.wdtFeed();
+    ESP.wdtFeed();                        // Need the dog or will reset after OTA updates...woof woof.
     counter++;
     Serial.println(counter);
   }
@@ -550,7 +565,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 void shortPress(){
-  ESP.wdtFeed();
+  ESP.wdtFeed();                 // Need the dog or will reset after OTA updates...woof woof.
   transmitFlashLight(ledWhite);
   Serial.println("Service Requested! Sending...");
   Serial.println(payload);
@@ -558,12 +573,12 @@ void shortPress(){
   String lenString = String(len);
   HTTPClient http;
   char* path = "/post";
-  ESP.wdtFeed();
-  http.begin("http://api.machforce.io/wrong");
+  ESP.wdtFeed();                 // Need the dog or will reset after OTA updates...woof woof.
+  http.begin("http://api.machforce.io/post");
   http.addHeader("Content-Type", "application/json");
   
   int httpCode = http.POST(payload);
-  ESP.wdtFeed();
+  ESP.wdtFeed();                 // Need the dog or will reset after OTA updates...woof woof.
   if(httpCode == 200) {
     http.writeToStream(&Serial);
     http.end();
@@ -589,9 +604,10 @@ void factoryReset(){
   digitalWrite(ledRed, HIGH);
   digitalWrite(ledWhite,HIGH);
   Serial.print("Restoring to factory settings, please wait...");
-  ESP.wdtFeed();
-  SPIFFS.format();
-  ESP.wdtFeed();
+  
+  ESP.wdtFeed();                         // Need the dog or will reset after OTA updates...woof woof.
+  SPIFFS.format();            
+  ESP.wdtFeed();                          // Need the dog or will reset after OTA updates...woof woof.
   wifiManager.resetSettings();
   Serial.println("Done! Restarting now.");
   digitalWrite(ledRed, LOW);
@@ -601,7 +617,7 @@ void factoryReset(){
 }
 
 void handle_form() { 
-  ESP.wdtFeed();
+  ESP.wdtFeed();                           // Need the dog or will reset after OTA updates...woof woof.
   customerDetails = "";
   payload         = "";                                      
   String customerName       = server.arg("customerName");
@@ -635,7 +651,8 @@ void handle_form() {
   http.addHeader("Content-Type", "application/json");
   int httpCode = http.POST(payload);
   
-  if(httpCode > 0) {
+    if(httpCode > 0) {
+    
             // HTTP header has been send and Server response header has been handled
             USE_SERIAL.printf("[HTTP]POST... code: %d\n", httpCode);
 
@@ -665,27 +682,30 @@ void handle_form() {
                 USE_SERIAL.println(response);
                 http.end();
                 USE_SERIAL.printf("Connection closed!");
+                ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
                 server.send(400, "text/html", authErrorPage);
-            }
-              else {
+            
+            } else {
                 counter = 0;
                 String payload = http.getString();
                 USE_SERIAL.println(payload);
                 http.end();
                 USE_SERIAL.printf("Connection closed!");
                 counter = 0;
+                ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
                 server.send(500, "text/html", serverErrorPage);
               }
-        } else {
-            counter = 0;
-            USE_SERIAL.printf("CONNECTION ERROR: Nothing was sent.");
-        }
+      } else {
+          counter = 0;
+          USE_SERIAL.printf("CONNECTION ERROR: Nothing was sent.");
+              ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
+      }
   }
 
   
 
   void runUpdater(){
-      ESP.wdtFeed();
+     ESP.wdtFeed();
       //String hostHTTPS = "https://api.machforce.io/update/" + version;
       String hostUnsecured = "http://api.machforce.io/update/" + version;
       Serial.println("Running updater...");
