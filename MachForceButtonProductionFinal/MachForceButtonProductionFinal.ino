@@ -86,12 +86,8 @@ void setup(void) {
     digitalWrite(relayPin, HIGH);
    
     Serial.begin(115200);
-    Serial.println();
-    Serial.print("Welcome To MachForce! Version Number: ");
-    Serial.println(version);
     
     ///// Initiate Hardware ///////
-    Serial.print("Hardware Inititiating..............");
     digitalWrite(TRIGGER_PIN, LOW);
     pinMode(TRIGGER_PIN, INPUT);
     pinMode(ledBlue, OUTPUT);
@@ -102,7 +98,6 @@ void setup(void) {
     digitalWrite(ledRed, LOW);
     digitalWrite(ledGreen, LOW);
     digitalWrite(ledBlue, LOW);
-    Serial.println("Hardware Inititiated!");
 
     digitalWrite(ledWhite, HIGH);
 
@@ -120,9 +115,6 @@ void setup(void) {
     
     // Check For Factory Reset Button
     checkResetButton();
-    
-    //Connected to the WiFi
-    Serial.println("Successfully Connected!");
 
     ///// Run OTA Firmware Updater ///////
     runUpdater();
@@ -132,19 +124,12 @@ void setup(void) {
    
     // Check SPIFFS File for customer data
     File f = SPIFFS.open("/f.txt", "r");
-    if (!f) {
-        Serial.println("File Open Failed");
-    }
-    Serial.print("File Size: ");
-    Serial.println(f.size());
     if( f.size() == 0){
         customerDetailsFlag = false;
         // Enter web server mode   
         StageTwo();
     } else {
       payload = f.readStringUntil('\n');
-      Serial.println("Customer Details Exist, Recorded As:");
-      Serial.println(payload);
       f.close();
       digitalWrite(ledWhite, LOW);
       shortPress();
@@ -357,10 +342,6 @@ void StageTwo(){
     serverErrorPage += "</html>"; // <--- html
 
     char localServer[] = "machforce";
-
-    if(mdns.begin(localServer)){
-       Serial.println("MDNS responder started");
-    }
     
     server.on("/", [](){
       server.send(200,"text/html", customerDetailPage);
@@ -373,13 +354,7 @@ void StageTwo(){
     }); 
     
     server.begin();
-    
-    Serial.println("HTTP server started");
-    Serial.println("Customer configuration server started. Please navigate open a browser and navigate to: ");
-    Serial.print(localServer);
-    Serial.println(".local");
 
-    
     digitalWrite(ledWhite, LOW);
     counter = 0;
     int relayInterval = 600;
@@ -422,7 +397,6 @@ void checkMillis(int ledColor){
     digitalWrite(ledColor, ledState);
     ESP.wdtFeed();                        // Need the dog or will reset after OTA updates...woof woof.
     counter++;
-    Serial.println(counter);
   }
   
 }
@@ -552,16 +526,11 @@ void transmitFlashLight(int ledColor){
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
-  Serial.println("Entered config mode");
-  Serial.println(WiFi.softAPIP());
-  Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
 void shortPress(){
   ESP.wdtFeed();                 // Need the dog or will reset after OTA updates...woof woof.
   transmitFlashLight(ledWhite);
-  Serial.println("Service Requested! Sending...");
-  Serial.println(payload);
   int len = payload.length();
   String lenString = String(len);
   HTTPClient http;
@@ -573,16 +542,12 @@ void shortPress(){
   int httpCode = http.POST(payload);
   ESP.wdtFeed();                 // Need the dog or will reset after OTA updates...woof woof.
   if(httpCode == 200) {
-    http.writeToStream(&Serial);
-    http.end();
     digitalWrite(ledWhite, LOW);
     digitalWrite(ledGreen, HIGH);
     delay(5000);
     digitalWrite(ledGreen, LOW);
     digitalWrite(relayPin, LOW);
   } else {
-    http.writeToStream(&Serial);
-    http.end();
     digitalWrite(ledWhite, LOW);
     digitalWrite(ledRed, HIGH);
     delay(5000);
@@ -596,13 +561,11 @@ void factoryReset(){
    // Empty SPIFF Files here
   digitalWrite(ledRed, HIGH);
   digitalWrite(ledWhite,HIGH);
-  Serial.print("Restoring to factory settings, please wait...");
   
   ESP.wdtFeed();                         // Need the dog or will reset after OTA updates...woof woof.
   SPIFFS.format();            
   ESP.wdtFeed();                          // Need the dog or will reset after OTA updates...woof woof.
   wifiManager.resetSettings();
-  Serial.println("Done! Restarting now.");
   digitalWrite(ledRed, LOW);
   digitalWrite(ledWhite,LOW);
   flashLight(ledWhite);
@@ -639,10 +602,6 @@ void handle_form() {
   customerDetails += "}";
 
   payload = AESencrypt(customerDetails);
-  
-  // Send HTTP Request to MachForce API to validate deviceId and valid inputs
-  Serial.println("Authenticating Customer Details. Please Wait...");
-  //Serial.println("Payload: " + payload);
 
   // Initiate TLS 1.2 Connection
   HTTPClient http;
@@ -652,81 +611,43 @@ void handle_form() {
   
     if(httpCode > 0) {
     
-            // HTTP header has been send and Server response header has been handled
-            USE_SERIAL.printf("[HTTP]POST... code: %d\n", httpCode);
 
             // Response from server
             if(httpCode == 200) {
                 counter = 0;
-                String response = http.getString();
-                USE_SERIAL.println(response);
                 http.end();
-                USE_SERIAL.printf("Connection closed!");            
-                // Write customer data to SPIFFS file
                 File F = SPIFFS.open("/f.txt", "w");
-                if(!F){
-                  Serial.println("File not found! Cannot record customer details.");
-                }
-                Serial.println("====== Writing to SPIFFS file =========");
                 F.print(payload);
-                USE_SERIAL.printf("Customer Details Set To: ");
-                Serial.println(payload);
                 F.close();
                 server.send(200, "text/html", resultPage);
                 customerDetailsFlag = true;
                 digitalWrite(relayPin, LOW);
             } else if (httpCode == 400){
                 counter = 0;
-                String response = http.getString();
-                USE_SERIAL.println(response);
                 http.end();
-                USE_SERIAL.printf("Connection closed!");
                 ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
                 server.send(400, "text/html", authErrorPage);
             
             } else {
                 counter = 0;
-                String payload = http.getString();
-                USE_SERIAL.println(payload);
                 http.end();
-                USE_SERIAL.printf("Connection closed!");
-                counter = 0;
                 ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
                 server.send(500, "text/html", serverErrorPage);
               }
       } else {
-          counter = 0;
-          USE_SERIAL.printf("CONNECTION ERROR: Nothing was sent.");
+              counter = 0;
+              http.end();
               ESP.wdtFeed();                                // Need the dog or will reset after OTA updates...woof woof.
       }
   }
 
   
-
-  void runUpdater(){
+void runUpdater(){
      ESP.wdtFeed();
       //String hostHTTPS = "https://api.machforce.io/update/" + version;
       String hostUnsecured = "http://api.machforce.io/update/" + version;
-      Serial.println("Running updater...");
       t_httpUpdate_return ret = ESPhttpUpdate.update(hostUnsecured);
       //t_httpUpdate_return  ret = ESPhttpUpdate.update(hostHTTPS,"","88:A1:3D:D9:F5:2A:3F:33:3B:59:91:B1:60:7C:E3:B6:7C:9A:EE:E3");
-
-      Serial.print("UPDATER RETURNED: ");
-      Serial.println(ret);
-
-        switch(ret) {
-            case HTTP_UPDATE_FAILED:
-                USE_SERIAL.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-                break;
-
-            case HTTP_UPDATE_NO_UPDATES:
-                USE_SERIAL.println("HTTP_UPDATE_NO_UPDATES");
-                break;
-
-            case HTTP_UPDATE_OK:
-                USE_SERIAL.println("HTTP_UPDATE_OK");
-                break;
-        }
 }
 
 
@@ -740,27 +661,15 @@ String AESencrypt(String customerDetails){
 
     aes.set_key(key, sizeof(key));
     gen_iv(my_iv);
-
-    // DEBUG ONLY - Print the IV
-    Serial.println("Encryption activating...");
-    Serial.println("Data Length: " + stringLength);
     
     base64_encode(b64data, (char *)my_iv,N_BLOCK);
     String IV = String(b64data);
-    Serial.println("IV in Base 64: " + IV);
-    Serial.println("Message To Encode: " + customerDetails);
 
     int b64len = base64_encode(b64data, (char *)customerDetails.c_str(),customerDetails.length());
-    Serial.println("B64 Size: " + String(b64len));
     // Encryption Done Here
     aes.do_aes_encrypt((byte *)b64data, b64len, cipher, key, 128, my_iv);
     base64_encode(b64data, (char *)cipher, aes.get_size());
     String encryptedCustomerData = String(b64data);
-
-    // DEBUG ONLY - Print the IV
-    Serial.println("Encryption Done!");
-    Serial.println("Cipher Size: " + String(aes.get_size()));
-    Serial.println("Encrypted Data: " + encryptedCustomerData);
 
     String payload = "{ \"payload\": \"";
     payload += encryptedCustomerData + "\",";
